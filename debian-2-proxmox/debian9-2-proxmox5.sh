@@ -5,7 +5,7 @@
 # Copyright (c) Adrian Jon Kriel :: admin@extremeshok.com
 ################################################################################
 #
-# Script updates can be found at: https://github.com/extremeshok/xshok-proxmox
+# Script updates can be found at: https://github.com/melroy89/xshok-proxmox (fork)
 #
 # Debian 9 to Proxmox 5 conversion script
 #

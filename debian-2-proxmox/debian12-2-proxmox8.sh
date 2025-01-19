@@ -7,7 +7,7 @@
 #
 # Script updates can be found at: https://github.com/melroy89/xshok-proxmox (fork)
 #
-# Debian 10 to Proxmox 6 conversion script
+# Debian 11 to Proxmox 7 conversion script
 #
 # License: BSD (Berkeley Software Distribution)
 #
@@ -25,8 +25,8 @@
 # Thank you @floco
 #
 # Usage:
-# curl -O https://raw.githubusercontent.com/extremeshok/xshok-proxmox/master/debian-2-proxmox/debian10-2-proxmox6.sh && chmod +x debian10-2-proxmox6.sh
-# ./debian10-2-proxmox6.sh
+# curl -O https://raw.githubusercontent.com/extremeshok/xshok-proxmox/master/debian-2-proxmox/debian11-2-proxmox7.sh && chmod +x debian11-2-proxmox7.sh
+# ./debian11-2-proxmox7.sh
 #
 #
 ################################################################################
@@ -102,13 +102,13 @@ EOF
 echo "Add Proxmox repo to APT sources"
 cat <<EOF >> /etc/apt/sources.list.d/proxmox.list
 # PVE packages provided by proxmox.com"
-deb http://download.proxmox.com/debian/pve buster pve-no-subscription
+deb [arch=amd64] http://download.proxmox.com/debian/pve bookworm pve-no-subscription
 EOF
-wget -q "http://download.proxmox.com/debian/proxmox-ve-release-6.x.gpg" -O /etc/apt/trusted.gpg.d/proxmox-ve-release-6.x.gpg
+wget -q "https://enterprise.proxmox.com/debian/proxmox-release-bookworm.gpg" -O /etc/apt/trusted.gpg.d/proxmox-release-bookworm.gpg
 apt-get update > /dev/null
 
 echo "Upgrading system"
-/usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' dist-upgrade
+/usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' full-upgrade
 
 echo "Installing postfix"
 cat <<EOF | debconf-set-selections
@@ -130,11 +130,17 @@ echo "Installing open-iscsi"
 echo "Installing proxmox-ve"
 /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install -y proxmox-ve
 
-echo "Remove legacy (4.19) kernel"
-/usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' purge linux-image-4.19*
+echo "Remove legacy (5.10) kernel"
+/usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' remove linux-image-amd64 linux-image-5.10*
 
 echo "Force grub to update"
 update-grub
+
+echo "Remove os=prober"
+/usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' remove os-prober
+
+echo "Remove enterprise repo"
+rm -f /etc/apt/sources.list.d/pve-install-repo.list
 
 echo "Done installing Proxmox VE"
 
@@ -147,7 +153,7 @@ pveum usermod admin@pve -group admin
 # export NO_MOTD_BANNER=true
 
 echo "Fetching postinstall script"
-wget https://raw.githubusercontent.com/xshok-proxmox/master/install-post.sh -c -O install-post.sh && chmod +x install-post.sh
+wget https://github.com/leancode/proxmox-hetzner/raw/refs/heads/master/install-post.sh -c -O install-post.sh && chmod +x install-post.sh
 if grep -q '#!/usr/bin/env bash' "install-post.sh"; then
   bash install-post.sh
 fi

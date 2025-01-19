@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
+echo "This is not working on ZFS yet and will not reboot properly. Better to install minimum debian and then use debian12-2-proxmox8.sh"
+exit
+
 ################################################################################
 # This is property of eXtremeSHOK.com
 # You are free to use, modify and distribute, however you may not remove this notice.
 # Copyright (c) Adrian Jon Kriel :: admin@extremeshok.com
 ################################################################################
 #
-# Script updates can be found at: https://github.com/extremeshok/xshok-proxmox
+# Script updates can be found at: https://github.com/melroy89/xshok-proxmox (fork)
 #
 # VNC Installation script for Proxmox VE and Backup Server
 #
@@ -68,45 +71,56 @@ MY_DNS_SERVER="$(resolvectl status | grep "Current DNS Server" | cut -d":" -f2 |
 
 if [ "$OS" == "PBS" ] ; then
   if [ ! -f INSTALL_IMAGE="proxmox-pbs.iso" ] ; then
-    wget "http://download.proxmox.com/iso/proxmox-backup-server_2.1-1.iso" -c -O proxmox-pbs.iso || exit 1
+    ISO_VERSION=$(curl -s 'http://download.proxmox.com/iso/' | grep -oP 'proxmox-backup-server_(\d+.\d+-\d).iso' | sort -V | tail -n1)
+    ISO_URL="http://download.proxmox.com/iso/$ISO_VERSION"
+    wget "$ISO_URL" -c -O proxmox-pbs.iso || exit 1
   fi
   INSTALL_IMAGE="proxmox-pbs.iso"
 else
   if [ ! -f INSTALL_IMAGE="" ] ; then
-     wget "http://download.proxmox.com/iso/proxmox-ve_7.1-2.iso" -c -O proxmox-ve.iso || exit 1
+    ISO_VERSION=$(curl -s 'http://download.proxmox.com/iso/' | grep -oP 'proxmox-ve_(\d+.\d+-\d).iso' | sort -V | tail -n1)
+    ISO_URL="http://download.proxmox.com/iso/$ISO_VERSION"
+    wget "$ISO_URL" -c -O proxmox-ve.iso || exit 1
   fi
   INSTALL_IMAGE="proxmox-ve.iso"
 fi
 
 # Generate NVME Device Arrays
-mapfile -t NVME_ARRAY < <( ls -1 /sys/block | grep ^nvme | sort -d )
-NVME_COUNT=${#NVME_ARRAY[@]}
+NVME_ARRAY=$(lsblk -dn -o NAME,SIZE,TYPE -e 1,7,11,14,15 | awk '{print $1}')
+NVME_COUNT=$(echo -n "$NVME_ARRAY" | grep -c $'\n' )
+
 NVME_TARGET=""
-NVME_TARGET_FIRST=""
 NVME_TARGET_COUNT=0
 if [[ $NVME_COUNT -ge 1 ]] ; then
-  for nvme_device in "${NVME_ARRAY[@]}"; do
+  echo "These are your $NVME_COUNT NVME disk(s):"
+  lsblk -dn -o NAME,SIZE,TYPE -e 1,7,11,14,15
+  echo
+  while IFS= read -r LINE; do
+    nvme_device=$(echo "$LINE" | awk '{print $1}')
+    echo Processing $nvme_device....
     if [ "${NVME_FORCE_4K,,}" == "yes" ] || [ "${NVME_FORCE_4K,,}" == "true" ] ; then
       if  [[ $(nvme id-ns "/dev/${nvme_device}" -H | grep "LBA Format" | grep "(in use)" | grep -oP "Data Size\K.*" | cut -d" " -f 2) -ne 4096 ]] ; then
         echo "Appling 4K block size to NVME: ${nvme_device}"
-        nvme format "/dev/${nvme_device}" -b 4096 -f || exit 1
+        nvme format "/dev/${nvme_device}" -b 4096 -f
         sleep 5
         echo "Reset NVME controller: ${nvme_device::-2}"
-        nvme reset "/dev/${nvme_device::-2}" || exit 1
+        nvme reset "/dev/${nvme_device::-2}"
         sleep 5
       fi
     fi
+    echo "Do you want to add $nvme_device to the proxmox install (y/n)? "
+    read -n 1 -s answer < /dev/tty
+    if [[ "$answer" =~ [Yy] ]]; then 
       if [ "${NVME_TARGET}" == "" ] ; then
         NVME_TARGET="${nvme_device}"
-        NVME_TARGET_FIRST="${nvme_device}"
-        NVME_TARGET_COUNT=1
       else
-        if [[ $(grep "${NVME_TARGET_FIRST}" -m1 /proc/partitions | xargs | cut -d" " -f3) -eq $(grep "${nvme_device}" -m1 /proc/partitions | xargs | cut -d" " -f3) ]]; then
-          NVME_TARGET="${NVME_TARGET},${nvme_device}"
-          NVME_TARGET_COUNT=$((NVME_TARGET_COUNT+1))
-        fi
+        NVME_TARGET="${NVME_TARGET},${nvme_device}"
       fi
-  done
+      NVME_TARGET_COUNT=$((NVME_TARGET_COUNT+1))
+    else
+      echo Not adding the drive to the proxmox install
+    fi
+  done <<< "$NVME_ARRAY"
 fi
 
 # Generate SCSI (HDD/SSD) Device Arrays
@@ -256,7 +270,7 @@ echo "********************************"
 
 echo ">> CONNECT VIA VNC TO ${MY_IP4_AND_NETMASK%/*} WITH PASSWORD ${MY_RANDOM_PASS}"
 
-printf "change vnc password\n%s\n" ${MY_RANDOM_PASS} | qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -enable-kvm -smp 4 -m 4096 -boot d -cdrom ${INSTALL_IMAGE} ${DISKS} -vnc :0,password -monitor stdio -no-reboot
+printf "change vnc password\n%s\n" ${MY_RANDOM_PASS} | qemu-system-x86_64 -machine type=q35,accel=kvm -cpu host -enable-kvm -smp 4 -m 4096 -boot d -cdrom ${INSTALL_IMAGE} ${DISKS} -vnc :0,password=on -monitor stdio -no-reboot
 
 #https://blogs.oracle.com/linux/post/how-to-emulate-block-devices-with-qemu
 
@@ -286,8 +300,8 @@ iface lo inet loopback
 
 iface ${MY_IFACE} inet manual
 
-auto vmbr0
-iface vmbr0 inet static
+auto vmbr1
+iface vmbr1 inet static
     address ${MY_IP4_AND_NETMASK}
     gateway ${MY_IP4_GATEWAY}
     bridge_ports ${MY_IFACE}
@@ -298,7 +312,7 @@ iface vmbr0 inet static
   echo "export the zfs pool, so the machine will boot correctly "
   echo ">> run the following command below"
   echo "zpool export -f rpool"
-  printf "change vnc password\n%s\n" ${MY_RANDOM_PASS} | qemu-system-x86_64 -enable-kvm -smp 4 -m 4096 $DISKS -vnc :0,password -monitor stdio -no-reboot -serial telnet:localhost:4321,server,nowait
+  printf "change vnc password\n%s\n" ${MY_RANDOM_PASS} | qemu-system-x86_64 -enable-kvm -smp 4 -m 4096 $DISKS -vnc :0,password=on -monitor stdio -no-reboot -serial telnet:localhost:4321,server,nowait
 
 fi
 

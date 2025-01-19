@@ -3,9 +3,10 @@
 # This is property of eXtremeSHOK.com
 # You are free to use, modify and distribute, however you may not remove this notice.
 # Copyright (c) Adrian Jon Kriel :: admin@extremeshok.com
+# Copyright (c) Melroy van den Berg :: melroy@melroy.org
 ################################################################################
 #
-# Script updates can be found at: https://github.com/extremeshok/xshok-proxmox
+# Script updates can be found at: https://github.com/melroy89/xshok-proxmox (fork)
 #
 # post-installation script for Proxmox
 #
@@ -13,7 +14,7 @@
 #
 ################################################################################
 #
-# Tested on Proxmox Version: 7.1
+# Tested on Proxmox Version: 8.3. Use at your own risk!
 #
 # Assumptions: Proxmox installed
 #
@@ -23,7 +24,7 @@
 #
 # Docker : not advisable to run docker on the Hypervisor(proxmox) directly.
 # Correct way is to create a VM which will be used exclusively for docker.
-# ie. fresh ubuntu lts server with https://github.com/extremeshok/xshok-docker
+# ie. fresh ubuntu lts server with https://github.com/melroy89/xshok-docker
 ################################################################################
 #
 #    THERE ARE NO USER CONFIGURABLE OPTIONS IN THIS SCRIPT
@@ -34,12 +35,17 @@
 # User Defined Options for (install-post.sh) post-installation script for Proxmox
 # are set in the xs-install-post.env, see the sample : xs-install-post.env.sample
 ## Alternatively, set the varible via the export
-# Example to disable to motd
-# export XS_MOTD="no" ; bash install-post.sh
+# Example to eable motd banner
+# export XS_MOTD="yes" ; bash install-post.sh
 ###############################
 #####  D O   N O T   E D I T   B E L O W  ######
 
 #### VARIABLES / options
+
+# Enable fast reboots
+if [ -z "$XS_KEXEC" ] ; then
+    XS_KEXEC="yes"
+fi
 # Detect AMD EPYC and Ryzen CPU and Apply Fixes
 if [ -z "$XS_AMDFIXES" ] ; then
     XS_AMDFIXES="yes"
@@ -74,7 +80,7 @@ if [ -z "$XS_FAIL2BAN" ] ; then
 fi
 # Detect if is a virtual machine and install the relavant guest agent
 if [ -z "$XS_GUESTAGENT" ] ; then
-    XS_GUESTAGENT="yes"
+    XS_GUESTAGENT="no"
 fi
 # Install ifupdown2 for a virtual internal network allows rebootless networking changes (not compatible with openvswitch-switch)
 if [ -z "$XS_IFUPDOWN2" ] ; then
@@ -86,7 +92,7 @@ if [ -z "$XS_JOURNALD" ] ; then
 fi
 # Install kernel source headers
 if [ -z "$XS_KERNELHEADERS" ] ; then
-    XS_KERNELHEADERS="yes"
+    XS_KERNELHEADERS="no"
 fi
 # Ensure ksmtuned (ksm-control-daemon) is enabled and optimise according to ram size
 if [ -z "$XS_KSMTUNED" ] ; then
@@ -110,7 +116,7 @@ if [ -z "$XS_LOGROTATE" ] ; then
 fi
 # Lynis security scan tool by Cisofy
 if [ -z "$XS_LYNIS" ] ; then
-    XS_LYNIS="yes"
+    XS_LYNIS="no"
 fi
 # Increase Max FS open files
 if [ -z "$XS_MAXFS" ] ; then
@@ -122,7 +128,7 @@ if [ -z "$XS_MEMORYFIXES" ] ; then
 fi
 # Pretty MOTD BANNER
 if [ -z "$XS_MOTD" ] ; then
-    XS_MOTD="yes"
+    XS_MOTD="no"
 fi
 # Enable Network optimising
 if [ -z "$XS_NET" ] ; then
@@ -164,7 +170,7 @@ fi
 if [ -z "$XS_TCPFASTOPEN" ] ; then
     XS_TCPFASTOPEN="yes"
 fi
-# Enable testing proxmox repo
+# Enable Proxmox testing repo
 if [ -z "$XS_TESTREPO" ] ; then
     XS_TESTREPO="no"
 fi
@@ -194,7 +200,7 @@ if [ -z "$XS_ZFSAUTOSNAPSHOT" ] ; then
 fi
 # Enable VFIO IOMMU support for PCIE passthrough
 if [ -z "$XS_VFIO_IOMMU" ] ; then
-    XS_VFIO_IOMMU="yes"
+    XS_VFIO_IOMMU="no"
 fi
 #################  D O   N O T   E D I T  ######################################
 
@@ -220,7 +226,7 @@ if [ ! -f "/etc/pve/.version" ] ; then
   exit 1
 fi
 
-if [ -f "/etc/extremeshok" ] ; then
+if [ -f "/etc/post-proxmox" ] ; then
   echo "ERROR: Script can only be run once"
   exit 1
 fi
@@ -245,6 +251,10 @@ if [ "${XS_NOENTREPO,,}" == "yes" ] ; then
     if [ -f /etc/apt/sources.list.d/pve-enterprise.list ]; then
       sed -i "s/^deb/#deb/g" /etc/apt/sources.list.d/pve-enterprise.list
     fi
+    # disable enterprise proxmox ceph repo
+    if [ -f /etc/apt/sources.list.d/ceph.list ]; then
+      sed -i "s/^deb/#deb/g" /etc/apt/sources.list.d/ceph.list
+    fi
     # enable free public proxmox repo
     if [ ! -f /etc/apt/sources.list.d/proxmox.list ] && [ ! -f /etc/apt/sources.list.d/pve-public-repo.list ] && [ ! -f /etc/apt/sources.list.d/pve-install-repo.list ] ; then
       echo -e "deb http://download.proxmox.com/debian/pve ${OS_CODENAME} pve-no-subscription\\n" > /etc/apt/sources.list.d/pve-public-repo.list
@@ -257,12 +267,12 @@ fi
 
 # rebuild and add non-free to /etc/apt/sources.list
 cat <<EOF > /etc/apt/sources.list
-deb https://ftp.debian.org/debian ${OS_CODENAME} main contrib
-deb https://ftp.debian.org/debian ${OS_CODENAME}-updates main contrib
+deb https://ftp.debian.org/debian ${OS_CODENAME} main contrib non-free non-free-firmware
+deb https://ftp.debian.org/debian ${OS_CODENAME}-updates main contrib non-free non-free-firmware
 # non-free
-deb https://httpredir.debian.org/debian/ ${OS_CODENAME} main contrib non-free
+deb https://httpredir.debian.org/debian/ ${OS_CODENAME} main contrib non-free non-free-firmware
 # security updates
-deb https://security.debian.org/debian-security ${OS_CODENAME}/updates main contrib
+deb http://security.debian.org/debian-security ${OS_CODENAME}-security main contrib
 EOF
 
 # Refresh the package lists
@@ -296,11 +306,12 @@ if [ "${XS_UTILS,,}" == "yes" ] ; then
     gnupg-agent \
     grc \
     htop \
+    btop \
     iftop \
     iotop \
     iperf \
     ipset \
-    iptraf \
+    iptraf-ng \
     mlocate \
     msr-tools \
     nano \
@@ -314,12 +325,13 @@ if [ "${XS_UTILS,,}" == "yes" ] ; then
     vim-nox \
     wget \
     whois \
-    zip
+    zip \
+    libguestfs-tools
 fi
 
 if [ "${XS_CEPH,,}" == "yes" ] ; then
     # Add the latest ceph provided by proxmox
-    echo "deb http://download.proxmox.com/debian/ceph-pacific ${OS_CODENAME} main" > /etc/apt/sources.list.d/ceph-pacific.list
+    echo "deb http://download.proxmox.com/debian/ceph-squid ${OS_CODENAME} no-subscription" > /etc/apt/sources.list.d/ceph-squid.list
     ## Refresh the package lists
     apt-get update > /dev/null 2>&1
     ## Install ceph support
@@ -340,10 +352,10 @@ if [ "${XS_OPENVSWITCH,,}" == "yes" ] && [ "${XS_IFUPDOWN2}" == "no" ] ; then
     ## Install openvswitch for a virtual internal network
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install ifenslave ifupdown
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' remove ifupdown2
-    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install openvswitch-switch
+    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install openvswitch-switch  openvswitch-common
 else
     ## Install ifupdown2 for a virtual internal network allows rebootless networking changes (not compatible with openvswitch-switch)
-    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' purge openvswitch-switch
+    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' purge openvswitch-switch  openvswitch-common
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install ifupdown2
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' remove ifenslave ifupdown
 fi
@@ -351,26 +363,26 @@ fi
 if [ "${XS_ZFSAUTOSNAPSHOT,,}" == "yes" ] ; then
     ## Install zfs-auto-snapshot
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install zfs-auto-snapshot
-    # make 5min snapshots , keep 12 5min snapshots
+    # make 15min snapshots, keep 4 5min snapshots
     if [ -f "/etc/cron.d/zfs-auto-snapshot" ] ; then
-      sed -i 's|--keep=[0-9]*|--keep=12|g' /etc/cron.d/zfs-auto-snapshot
-      sed -i 's|*/[0-9]*|*/5|g' /etc/cron.d/zfs-auto-snapshot
+      sed -i 's|--keep=[0-9]*|--keep=4|g' /etc/cron.d/zfs-auto-snapshot
+      sed -i 's|*/[0-9]*|*/15|g' /etc/cron.d/zfs-auto-snapshot
     fi
-    # keep 24 hourly snapshots
+    # keep 1 hourly snapshots
     if [ -f "/etc/cron.hourly/zfs-auto-snapshot" ] ; then
-      sed -i 's|--keep=[0-9]*|--keep=24|g' /etc/cron.hourly/zfs-auto-snapshot
+      sed -i 's|--keep=[0-9]*|--keep=1|g' /etc/cron.hourly/zfs-auto-snapshot
     fi
-    # keep 7 daily snapshots
+    # keep 1 daily snapshots
     if [ -f "/etc/cron.daily/zfs-auto-snapshot" ] ; then
-      sed -i 's|--keep=[0-9]*|--keep=7|g' /etc/cron.daily/zfs-auto-snapshot
+      sed -i 's|--keep=[0-9]*|--keep=1|g' /etc/cron.daily/zfs-auto-snapshot
     fi
-    # keep 4 weekly snapshots
+    # keep 1 weekly snapshots
     if [ -f "/etc/cron.weekly/zfs-auto-snapshot" ] ; then
-      sed -i 's|--keep=[0-9]*|--keep=4|g' /etc/cron.weekly/zfs-auto-snapshot
+      sed -i 's|--keep=[0-9]*|--keep=1|g' /etc/cron.weekly/zfs-auto-snapshot
     fi
-    # keep 3 monthly snapshots
+    # keep 1 monthly snapshots
     if [ -f "/etc/cron.monthly/zfs-auto-snapshot" ] ; then
-      sed -i 's|--keep=[0-9]*|--keep=3|g' /etc/cron.monthly/zfs-auto-snapshot
+      sed -i 's|--keep=[0-9]*|--keep=1|g' /etc/cron.monthly/zfs-auto-snapshot
     fi
 fi
 
@@ -424,8 +436,8 @@ if [ "${XS_AMDFIXES,,}" == "yes" ] ; then
         echo "options kvm ignore_msrs=Y" >> /etc/modprobe.d/kvm.conf
         echo "options kvm report_ignored_msrs=N" >> /etc/modprobe.d/kvm.conf
 
-        echo "Installing kernel 5.15"
-        /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install pve-kernel-5.15
+        echo "Installing kernel 6.8.12"
+        /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install 6.8.12-1-pve
     fi
 fi
 
@@ -434,31 +446,31 @@ if [ "${XS_KERNELHEADERS,,}" == "yes" ] ; then
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install pve-headers module-assistant
 fi
 
-# if [ "$XS_KEXEC" == "yes" ] ; then
-#     ## Install kexec, allows for quick reboots into the latest updated kernel set as primary in the boot-loader.
-#     # use command 'reboot-quick'
-#     echo "kexec-tools kexec-tools/load_kexec boolean false" | debconf-set-selections
-#     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install kexec-tools
-#     cat <<'EOF' > /etc/systemd/system/kexec-pve.service
-# [Unit]
-# Description=Loading new kernel into memory
-# Documentation=man:kexec(8)
-# DefaultDependencies=no
-# Before=reboot.target
-# RequiresMountsFor=/boot
-# #Before=shutdown.target umount.target final.target
+if [ "$XS_KEXEC" == "yes" ] ; then
+    ## Install kexec, allows for quick reboots into the latest updated kernel set as primary in the boot-loader.
+    # use command 'reboot-quick'
+    echo "kexec-tools kexec-tools/load_kexec boolean false" | debconf-set-selections
+    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install kexec-tools
+    cat <<'EOF' > /etc/systemd/system/kexec-pve.service
+[Unit]
+Description=Loading new kernel into memory
+Documentation=man:kexec(8)
+DefaultDependencies=no
+Before=reboot.target
+RequiresMountsFor=/boot
+#Before=shutdown.target umount.target final.target
 
-# [Service]
-# Type=oneshot
-# RemainAfterExit=yes
-# ExecStart=/sbin/kexec -d -l /boot/pve/vmlinuz --initrd=/boot/pve/initrd.img --reuse-cmdline
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/kexec -d -l /boot/pve/vmlinuz --initrd=/boot/pve/initrd.img --reuse-cmdline
 
-# [Install]
-# WantedBy=default.target
-# EOF
-#     systemctl enable kexec-pve.service
-#     echo "alias reboot-quick='systemctl kexec'" >> /root/.bash_profile
-# fi
+[Install]
+WantedBy=default.target
+EOF
+    systemctl enable kexec-pve.service
+    echo "alias reboot-quick='systemctl kexec'" >> /root/.bash_profile
+fi
 
 if [ "${XS_DISABLERPC,,}" == "yes" ] ; then
     ## Disable portmapper / rpcbind (security)
@@ -506,7 +518,6 @@ if [ "${XS_PIGZ,,}" == "yes" ] ; then
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install pigz
     cat  <<EOF > /bin/pigzwrapper
 #!/bin/sh
-# eXtremeSHOK.com
 PATH=/bin:\$PATH
 GZIP="-1"
 exec /usr/bin/pigz "\$@"
@@ -549,10 +560,21 @@ bantime = 3600
 findtime = 600
 EOF
 
-# cat <<EOF > /etc/fail2ban/jail.local
-# [DEFAULT]
-# banaction = iptables-ipset-proto4
-# EOF
+cat <<EOF > /etc/fail2ban/jail.local
+[DEFAULT]
+ignoreip = 127.0.0.1
+bantime = 86400
+maxretry = 2
+findtime = 1800
+[ssh-iptables]
+enabled = true
+filter = sshd
+action = iptables[name=SSH, port=ssh, protocol=tcp]
+logpath = /var/log/auth.log
+maxretry = 2
+findtime = 3600
+bantime = 32400
+EOF
 
     systemctl enable fail2ban
 
@@ -566,7 +588,7 @@ if [ "${XS_NOSUBBANNER,,}" == "yes" ] ; then
       # create a daily cron to make sure the banner does not re-appear
   cat <<'EOF' > /etc/cron.daily/xs-pve-nosub
 #!/bin/sh
-# eXtremeSHOK.com Remove subscription banner
+# Remove subscription banner
 sed -i "s/data.status !== 'Active'/false/g" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 sed -i "s/checked_command: function(orig_cmd) {/checked_command: function() {} || function(orig_cmd) {/g" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 EOF
@@ -581,7 +603,7 @@ if [ "${XS_MOTD,,}" == "yes" ] ; then
 ## Pretty MOTD BANNER
   if ! grep -q https "/etc/motd" ; then
     cat << 'EOF' > /etc/motd.new
-	   This system is optimised by: eXtremeSHOK.com
+This system is optimised
 EOF
 
     cat /etc/motd >> /etc/motd.new
@@ -592,7 +614,6 @@ fi
 if [ "${XS_KERNELPANIC,,}" == "yes" ] ; then
     # Enable restart on kernel panic
     cat <<EOF > /etc/sysctl.d/99-xs-kernelpanic.conf
-# eXtremeSHOK.com
 # Enable restart on kernel panic, kernel oops and hardlockup
 kernel.core_pattern=/var/crash/core.%t.%p
 # Reboot on kernel panic afetr 10s
@@ -608,7 +629,6 @@ if [ "${XS_LIMITS,,}" == "yes" ] ; then
     ## Increase max user watches
     # BUG FIX : No space left on device
     cat <<EOF > /etc/sysctl.d/99-xs-maxwatches.conf
-# eXtremeSHOK.com
 # Increase max user watches
 fs.inotify.max_user_watches=1048576
 fs.inotify.max_user_instances=1048576
@@ -616,7 +636,6 @@ fs.inotify.max_queued_events=1048576
 EOF
     ## Increase max FD limit / ulimit
     cat <<EOF >> /etc/security/limits.d/99-xs-limits.conf
-# eXtremeSHOK.com
 # Increase max FD limit / ulimit
 * soft     nproc          1048576
 * hard     nproc          1048576
@@ -629,7 +648,6 @@ root hard     nofile         unlimited
 EOF
     ## Increase kernel max Key limit
     cat <<EOF > /etc/sysctl.d/99-xs-maxkeys.conf
-# eXtremeSHOK.com
 # Increase kernel max Key limit
 kernel.keys.root_maxkeys=1000000
 kernel.keys.maxkeys=1000000
@@ -648,7 +666,6 @@ fi
 if [ "${XS_LOGROTATE,,}" == "yes" ] ; then
     ## Optimise logrotate
     cat <<EOF > /etc/logrotate.conf
-# eXtremeSHOK.com
 daily
 su root adm
 rotate 7
@@ -666,7 +683,6 @@ fi
 if [ "${XS_JOURNALD,,}" == "yes" ] ; then
     ## Limit the size and optimise journald
     cat <<EOF > /etc/systemd/journald.conf
-# eXtremeSHOK.com
 [Journal]
 # Store on disk
 Storage=persistent
@@ -703,7 +719,6 @@ if [ "${XS_ENTROPY,,}" == "yes" ] ; then
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install haveged
     ## Net optimising
     cat <<EOF > /etc/default/haveged
-# eXtremeSHOK.com
 #   -w sets low entropy watermark (in bits)
 DAEMON_ARGS="-w 1024"
 EOF
@@ -720,7 +735,6 @@ fi
 if [ "${XS_MEMORYFIXES,,}" == "yes" ] ; then
     ## Optimise Memory
 cat <<EOF > /etc/sysctl.d/99-xs-memory.conf
-# eXtremeSHOK.com
 # Memory Optimising
 ## Bugfix: reserve 1024MB memory for system
 vm.min_free_kbytes=1048576
@@ -734,7 +748,6 @@ fi
 if [ "${XS_TCPBBR,,}" == "yes" ] ; then
 ## Enable TCP BBR congestion control
 cat <<EOF > /etc/sysctl.d/99-xs-kernel-bbr.conf
-# eXtremeSHOK.com
 # TCP BBR congestion control
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
@@ -744,7 +757,6 @@ fi
 if [ "${XS_TCPFASTOPEN,,}" == "yes" ] ; then
 ## Enable TCP fastopen
 cat <<EOF > /etc/sysctl.d/99-xs-tcp-fastopen.conf
-# eXtremeSHOK.com
 # TCP fastopen
 net.ipv4.tcp_fastopen=3
 EOF
@@ -753,7 +765,6 @@ fi
 if [ "${XS_NET,,}" == "yes" ] ; then
 ## Enable Network optimising
 cat <<EOF > /etc/sysctl.d/99-xs-net.conf
-# eXtremeSHOK.com
 net.core.netdev_max_backlog=8192
 net.core.optmem_max=8192
 net.core.rmem_max=16777216
@@ -804,7 +815,6 @@ fi
 if [ "${XS_SWAPPINESS,,}" == "yes" ] ; then
     ## Bugfix: high swap usage with low memory usage
     cat <<EOF > /etc/sysctl.d/99-xs-swap.conf
-# eXtremeSHOK.com
 # Bugfix: high swap usage with low memory usage
 vm.swappiness=10
 EOF
@@ -813,7 +823,6 @@ fi
 if [ "${XS_MAXFS,,}" == "yes" ] ; then
     ## Increase Max FS open files
     cat <<EOF > /etc/sysctl.d/99-xs-fs.conf
-# eXtremeSHOK.com
 # Max FS Optimising
 fs.nr_open=12000000
 fs.file-max=9000000
@@ -822,7 +831,7 @@ EOF
 fi
 
 if [ "${XS_BASHRC,,}" == "yes" ] ; then
-    ## Customise bashrc (thanks broeckca)
+    ## Customise bashrc
     cat <<EOF >> /root/.bashrc
 export HISTTIMEFORMAT="%d/%m/%y %T "
 export PS1='\u@\h:\W \$ '
@@ -830,6 +839,9 @@ alias l='ls -CF'
 alias la='ls -A'
 alias ll='ls -alF'
 alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
 source /etc/profile.d/bash_completion.sh
 export PS1="\[\e[31m\][\[\e[m\]\[\e[38;5;172m\]\u\[\e[m\]@\[\e[38;5;153m\]\h\[\e[m\] \[\e[38;5;214m\]\W\[\e[m\]\[\e[31m\]]\[\e[m\]\\$ "
 EOF
@@ -858,8 +870,7 @@ if [ "${XS_ZFSARC,,}" == "yes" ] ; then
         MY_ZFS_ARC_MAX=536870912
       fi
       cat <<EOF > /etc/modprobe.d/99-xs-zfsarc.conf
-# eXtremeSHOK.com ZFS tuning
-
+# ZFS tuning
 # Use 1/8 RAM for MAX cache, 1/16 RAM for MIN cache, or 1GB
 options zfs zfs_arc_min=$MY_ZFS_ARC_MIN
 options zfs zfs_arc_max=$MY_ZFS_ARC_MAX
@@ -898,7 +909,6 @@ if [ "${XS_VFIO_IOMMU,,}" == "yes" ] ; then
     fi
 
     cat <<EOF >> /etc/modules
-# eXtremeSHOK.com
 vfio
 vfio_iommu_type1
 vfio_pci
@@ -906,7 +916,6 @@ vfio_virqfd
 
 EOF
     cat <<EOF >> /etc/modprobe.d/blacklist.conf
-# eXtremeSHOK.com
 blacklist nouveau
 blacklist lbm-nouveau
 options nouveau modeset=0
@@ -929,9 +938,8 @@ pve-efiboot-tool refresh
 /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' autoremove
 /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' autoclean
 
-echo "# eXtremeSHOK.com" > /etc/extremeshok
-date >> /etc/extremeshok
-
 ## Script Finish
-echo -e '\033[1;33m Finished....please restart the system \033[0m'
-echo "Optimisations by https://eXtremeSHOK.com"
+echo -e '\033[1;33m Finished... Please, restart the system \033[0m'
+
+# Avoid executing this script twice
+date >> /etc/post-proxmox
