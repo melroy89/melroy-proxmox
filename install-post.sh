@@ -238,12 +238,12 @@ RAM_SIZE_GB=$(( $(vmstat -s | grep -i "total memory" | xargs | cut -d" " -f 1) /
 
 if [ "${XS_LANG}" == "en_US.UTF-8" ] && [ "${XS_NOAPTLANG,,}" == "yes" ] ; then
     # save bandwidth and skip downloading additional languages
-    echo -e "Acquire::Languages \"none\";\\n" > /etc/apt/apt.conf.d/99-xs-disable-translations
+    echo -e "Acquire::Languages \"none\";\\n" > /etc/apt/apt.conf.d/99-disable-translations
 fi
 
 if [ "${XS_APTIPV4,,}" == "yes" ] ; then
     # force APT to use IPv4
-    echo -e "Acquire::ForceIPv4 \"true\";\\n" > /etc/apt/apt.conf.d/99-xs-force-ipv4
+    echo -e "Acquire::ForceIPv4 \"true\";\\n" > /etc/apt/apt.conf.d/99-force-ipv4
 fi
 
 if [ "${XS_NOENTREPO,,}" == "yes" ] ; then
@@ -611,29 +611,29 @@ fi
 
 if [ "${XS_KERNELPANIC,,}" == "yes" ] ; then
     # Enable restart on kernel panic
-    cat <<EOF > /etc/sysctl.d/99-xs-kernelpanic.conf
+    cat <<EOF > /etc/sysctl.d/99-kernelpanic.conf
 # Enable restart on kernel panic, kernel oops and hardlockup
-kernel.core_pattern=/var/crash/core.%t.%p
+kernel.core_pattern = /var/crash/core.%t.%p
 # Reboot on kernel panic afetr 10s
-kernel.panic=10
+kernel.panic = 10
 # Panic on kernel oops, kernel exploits generally create an oops
-kernel.panic_on_oops=1
+kernel.panic_on_oops = 1
 # Panic on a hardlockup
-kernel.hardlockup_panic=1
+kernel.hardlockup_panic = 1
 EOF
 fi
 
 if [ "${XS_LIMITS,,}" == "yes" ] ; then
     ## Increase max user watches
     # BUG FIX : No space left on device
-    cat <<EOF > /etc/sysctl.d/99-xs-maxwatches.conf
+    cat <<EOF > /etc/sysctl.d/99-maxwatches.conf
 # Increase max user watches
-fs.inotify.max_user_watches=1048576
-fs.inotify.max_user_instances=1048576
-fs.inotify.max_queued_events=1048576
+fs.inotify.max_user_watches = 1048576
+fs.inotify.max_user_instances = 1048576
+fs.inotify.max_queued_events = 1048576
 EOF
     ## Increase max FD limit / ulimit
-    cat <<EOF >> /etc/security/limits.d/99-xs-limits.conf
+    cat <<EOF >> /etc/security/limits.d/99-limits.conf
 # Increase max FD limit / ulimit
 * soft     nproc          1048576
 * hard     nproc          1048576
@@ -645,7 +645,7 @@ root soft     nofile         unlimited
 root hard     nofile         unlimited
 EOF
     ## Increase kernel max Key limit
-    cat <<EOF > /etc/sysctl.d/99-xs-maxkeys.conf
+    cat <<EOF > /etc/sysctl.d/99-maxkeys.conf
 # Increase kernel max Key limit
 kernel.keys.root_maxkeys=1000000
 kernel.keys.maxkeys=1000000
@@ -732,31 +732,31 @@ fi
 
 if [ "${XS_MEMORYFIXES,,}" == "yes" ] ; then
     ## Optimise Memory
-cat <<EOF > /etc/sysctl.d/99-xs-memory.conf
+cat <<EOF > /etc/sysctl.d/99-memory.conf
 # Memory Optimising
 ## Bugfix: reserve 1024MB memory for system
-vm.min_free_kbytes=1048576
-vm.nr_hugepages=72
+vm.min_free_kbytes = 1048576
+vm.nr_hugepages = 2000
 # (Redis/MongoDB)
-vm.max_map_count=262144
+vm.max_map_count = 1048576
 vm.overcommit_memory = 1
 EOF
 fi
 
 if [ "${XS_TCPBBR,,}" == "yes" ] ; then
-## Enable TCP BBR congestion control
-cat <<EOF > /etc/sysctl.d/99-xs-kernel-bbr.conf
+## Enable Google TCP BBR congestion control
+cat <<EOF > /etc/sysctl.d/99-kernel-bbr.conf
 # TCP BBR congestion control
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
 EOF
 fi
 
 if [ "${XS_TCPFASTOPEN,,}" == "yes" ] ; then
-## Enable TCP fastopen
-cat <<EOF > /etc/sysctl.d/99-xs-tcp-fastopen.conf
-# TCP fastopen
-net.ipv4.tcp_fastopen=3
+## Enable TCP fast open
+cat <<EOF > /etc/sysctl.d/99-tcp-fastopen.conf
+# TCP Fast Open (TFO)
+net.ipv4.tcp_fastopen = 3
 EOF
 fi
 
@@ -812,20 +812,20 @@ EOF
 fi
 
 if [ "${XS_SWAPPINESS,,}" == "yes" ] ; then
-    ## Bugfix: high swap usage with low memory usage
-    cat <<EOF > /etc/sysctl.d/99-xs-swap.conf
-# Bugfix: high swap usage with low memory usage
+    ## Decrease swappiness of the kernel
+    cat <<EOF > /etc/sysctl.d/99-swap.conf
 vm.swappiness = 10
+vm.vfs_cache_pressure = 100
 EOF
 fi
 
 if [ "${XS_MAXFS,,}" == "yes" ] ; then
     ## Increase Max FS open files
-    cat <<EOF > /etc/sysctl.d/99-xs-fs.conf
+    cat <<EOF > /etc/sysctl.d/99-fs.conf
 # Max FS Optimising
-fs.nr_open=12000000
-fs.file-max=9000000
-fs.aio-max-nr=524288
+fs.nr_open = 12000000
+fs.file-max = 9223372036854775807
+fs.aio-max-nr = 1048576
 EOF
 fi
 
@@ -868,7 +868,7 @@ if [ "${XS_ZFSARC,,}" == "yes" ] ; then
       if [[ MY_ZFS_ARC_MAX -lt 536870912 ]] ; then
         MY_ZFS_ARC_MAX=536870912
       fi
-      cat <<EOF > /etc/modprobe.d/99-xs-zfsarc.conf
+      cat <<EOF > /etc/modprobe.d/99-zfsarc.conf
 # ZFS tuning
 # Use 1/8 RAM for MAX cache, 1/16 RAM for MIN cache, or 1GB
 options zfs zfs_arc_min=$MY_ZFS_ARC_MIN
