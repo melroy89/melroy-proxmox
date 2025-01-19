@@ -297,19 +297,17 @@ if [ "${XS_UTILS,,}" == "yes" ] ; then
 # Install common system utilities
     /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install \
     axel \
-    build-essential \
     curl \
     dialog \
     dnsutils \
     dos2unix \
-    git \
     gnupg-agent \
     grc \
     htop \
     btop \
     iftop \
     iotop \
-    iperf \
+    iperf3 \
     ipset \
     iptraf-ng \
     mlocate \
